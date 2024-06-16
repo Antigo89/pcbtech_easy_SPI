@@ -83,7 +83,7 @@
   <Watches active="0" update="Never"/>
  </Watch4>
  <Files>
-  <SessionOpenFile windowGroup="DockEditLeft" x="13" y="24" useTextEdit="1" path="main.c" left="0" selected="1" top="0" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="17" useTextEdit="1" path="main.c" left="0" selected="1" top="0" codecName="Default"/>
   <SessionOpenFile windowGroup="DockEditLeft" x="36" y="35" useTextEdit="1" path="main.h" left="0" top="0" codecName="Default"/>
  </Files>
  <EMStudioWindow activeProject="pcbtech_SPI2" fileDialogDefaultFilter="*" autoConnectTarget="J-Link" buildConfiguration="Debug" sessionSettings="" debugSearchFileMap="" fileDialogInitialDirectory="D:/Proj/ARM/Kurs_STM32/week4/SPI2" debugSearchPath="" autoConnectCapabilities="3711"/>

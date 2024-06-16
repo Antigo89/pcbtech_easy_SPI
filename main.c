@@ -101,6 +101,7 @@ void w25write(uint32_t addr, uint16_t data, uint8_t f16b){
   if(f16b == SPI_F16B){
     SPI2->CR1 &= ~(SPI_CR1_DFF); //8bit
   }
+  while(SPI2->SR & SPI_SR_BSY){}
   CS_HIGHT
   CS_LOW
   w25send_byte(RD_SR1);
