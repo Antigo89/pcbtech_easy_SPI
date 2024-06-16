@@ -1,7 +1,10 @@
 /*
 File    : main.c
-
+Software "Kurs STM32 PCBtech"
+Lesson 6: SPI2 connect to W25Q64 (memory).
+Student: antigo1989@gmail.com
 */
+
 #include "main.h"
 
 /***************************inline function*******************************/
@@ -11,7 +14,6 @@ File    : main.c
 
 //global values
 volatile uint32_t addr_read = 0x00;
-uint16_t memsave = 0x00;
 /*********************************main************************************/
 int main(void) {
   //Values
@@ -27,22 +29,8 @@ int main(void) {
   
   #ifndef DATA_IN_MEMORY
     w25clear_sector(ADDR1);
-    w25write(ADDR1, LED1);
-
-    SPI2->CR1 &= ~(SPI_CR1_SPE);
-    SPI2->CR1 |= (0b100<<SPI_CR1_BR_Pos)|SPI_CR1_MSTR|SPI_CR1_SSM|SPI_CR1_SSI|SPI_CR1_DFF; //42MHz/32 = 1,32MHz Master CS-manual 16bit
-    SPI2->CR1 &= ~(SPI_CR1_CPHA|SPI_CR1_CPOL); //mode0
-    SPI2->CR1 |= SPI_CR1_SPE;
-
-    uint16_t led_2_3 = 0x0203; //(LED2<<8)|LED3
-    //w25write(ADDR2, LED2);
-    //w25write(ADDR3, LED3);
-    w25write(ADDR2, led_2_3);
-
-    SPI2->CR1 &= ~(SPI_CR1_SPE);
-    SPI2->CR1 |= (0b100<<SPI_CR1_BR_Pos)|SPI_CR1_MSTR|SPI_CR1_SSM|SPI_CR1_SSI; //42MHz/32 = 1,32MHz Master CS-manual
-    SPI2->CR1 &= ~(SPI_CR1_DFF|SPI_CR1_CPHA|SPI_CR1_CPOL); //8bit mode0
-    SPI2->CR1 |= SPI_CR1_SPE;
+    w25write(ADDR1, LED1, SPI_F8B);
+    w25write(ADDR2, (LED3|(LED2<<8)), SPI_F16B);
   #endif
 
   while(1){
@@ -97,22 +85,21 @@ uint16_t w25send_byte(uint16_t data){
   return SPI2->DR;
 }
 
-void w25write(uint32_t addr, uint16_t data){
+void w25write(uint32_t addr, uint16_t data, uint8_t f16b){
   CS_LOW
   w25send_byte(WR_EN);
   CS_HIGHT
   CS_LOW
-  if(!(SPI2->CR1 & SPI_CR1_DFF)){
-    w25send_byte(PG_PROG);
-    w25send_byte((addr>>16) & 0xFF);
-    w25send_byte((addr>>8) & 0xFF);
-    w25send_byte(addr & 0xFF);
-    w25send_byte(data);
-  }else{
-    memsave = (((PG_PROG<<8) & 0xFF00)|((addr>>16) & 0xFF)) & 0xFFFF;
-    w25send_byte(memsave);
-    w25send_byte(addr & 0xFFFF);
-    w25send_byte(data & 0xFFFF);
+  w25send_byte(PG_PROG);
+  w25send_byte((addr>>16) & 0xFF);
+  w25send_byte((addr>>8) & 0xFF);
+  w25send_byte(addr & 0xFF);
+  if(f16b == SPI_F16B){
+    SPI2->CR1 |= SPI_CR1_DFF; //16bit
+  }
+  w25send_byte(data);
+  if(f16b == SPI_F16B){
+    SPI2->CR1 &= ~(SPI_CR1_DFF); //8bit
   }
   CS_HIGHT
   CS_LOW

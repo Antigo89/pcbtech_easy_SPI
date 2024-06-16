@@ -26,9 +26,12 @@
 #define LED3 0x03
 #define CLEAR 0xFF
 
+#define SPI_F8B 0x00
+#define SPI_F16B 0x01
+
 //prototype function
 uint16_t w25send_byte(uint16_t data);
-void w25write(uint32_t addr, uint16_t data);
+void w25write(uint32_t addr, uint16_t data, uint8_t f16b);
 uint8_t w25read(uint32_t addr);
 void w25clear_sector(uint32_t addr);
 

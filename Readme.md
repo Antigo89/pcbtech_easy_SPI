@@ -12,5 +12,6 @@ SPI2 connect to W25Q64 (memory).
 </details>
 
 <details><summary><b>Settings in main.h</b></summary>
-
+<div>disabling the recording stage to external memory </div>
+<div>//#define DATA_IN_MEMORY 1 </div>
 </details>
