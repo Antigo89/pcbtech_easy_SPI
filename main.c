@@ -4,11 +4,14 @@ File    : main.c
 */
 #include "main.h"
 
-//Prototypr internal function
-void key_led_Init(void);
-//global values
-volatile uint8_t user_flags = 0x00;
+/***************************inline function*******************************/
+#define CS_HIGHT GPIOE->BSRR |= GPIO_BSRR_BS3;
+#define CS_LOW GPIOE->BSRR |= GPIO_BSRR_BR3;
 
+
+//global values
+volatile uint32_t addr_read = 0x00;
+uint16_t memsave = 0x00;
 /*********************************main************************************/
 int main(void) {
   //Values
@@ -20,22 +23,137 @@ int main(void) {
   //GPIO init
   key_led_Init();
   //Connections init
+  SPI2_Init();
+  
+  #ifndef DATA_IN_MEMORY
+    w25clear_sector(ADDR1);
+    w25write(ADDR1, LED1);
 
-  //LED turn off
-  GPIOE->BSRR |= GPIO_BSRR_BS13|GPIO_BSRR_BS14|GPIO_BSRR_BS15;
+    SPI2->CR1 &= ~(SPI_CR1_SPE);
+    SPI2->CR1 |= (0b100<<SPI_CR1_BR_Pos)|SPI_CR1_MSTR|SPI_CR1_SSM|SPI_CR1_SSI|SPI_CR1_DFF; //42MHz/32 = 1,32MHz Master CS-manual 16bit
+    SPI2->CR1 &= ~(SPI_CR1_CPHA|SPI_CR1_CPOL); //mode0
+    SPI2->CR1 |= SPI_CR1_SPE;
 
+    uint16_t led_2_3 = 0x0203; //(LED2<<8)|LED3
+    //w25write(ADDR2, LED2);
+    //w25write(ADDR3, LED3);
+    w25write(ADDR2, led_2_3);
+
+    SPI2->CR1 &= ~(SPI_CR1_SPE);
+    SPI2->CR1 |= (0b100<<SPI_CR1_BR_Pos)|SPI_CR1_MSTR|SPI_CR1_SSM|SPI_CR1_SSI; //42MHz/32 = 1,32MHz Master CS-manual
+    SPI2->CR1 &= ~(SPI_CR1_DFF|SPI_CR1_CPHA|SPI_CR1_CPOL); //8bit mode0
+    SPI2->CR1 |= SPI_CR1_SPE;
+  #endif
 
   while(1){
-    __NOP();
+    if(addr_read > 0){
+      uint8_t mem_read = (uint8_t)w25read(addr_read) & 0xFF;
+      switch(mem_read){
+        case LED1:
+          GPIOE->BSRR |= GPIO_BSRR_BR13|GPIO_BSRR_BS14|GPIO_BSRR_BS15;
+          break;
+        case LED2:
+          GPIOE->BSRR |= GPIO_BSRR_BR14|GPIO_BSRR_BS13|GPIO_BSRR_BS15;
+          break;
+        case LED3:
+          GPIOE->BSRR |= GPIO_BSRR_BR15|GPIO_BSRR_BS13|GPIO_BSRR_BS14;
+          break;
+        case CLEAR:
+          GPIOE->BSRR |= GPIO_BSRR_BS13|GPIO_BSRR_BS14|GPIO_BSRR_BS15;
+          break;
+      }
+      addr_read = 0;
+    }
+  __NOP();
   }
 }
 
+/***********************interrupts function**************************/
+//keys
+void EXTI15_10_IRQHandler(void){
+  switch(EXTI->PR & (EXTI_PR_PR10|EXTI_PR_PR11|EXTI_PR_PR12)){
+      case EXTI_PR_PR10:
+        addr_read = ADDR1;
+        break;
+      case EXTI_PR_PR11:
+        addr_read = ADDR2;
+        break;
+      case EXTI_PR_PR12:
+        addr_read = ADDR3;
+        break;
+  } 
+  EXTI->PR |= EXTI_PR_PR10|EXTI_PR_PR11|EXTI_PR_PR12;
+}
+
 /****************************** function**********************************/
+uint16_t w25send_byte(uint16_t data){
+  if(!(SPI2->CR1 & SPI_CR1_DFF)){
+    SPI2->DR = (data & 0xFF);
+  }else{
+    SPI2->DR = (data & 0xFFFF);
+  }
+  while((SPI2->SR & SPI_SR_TXE) == 0){}
+  while((SPI2->SR & SPI_SR_RXNE) == 0){}
+  return SPI2->DR;
+}
+
+void w25write(uint32_t addr, uint16_t data){
+  CS_LOW
+  w25send_byte(WR_EN);
+  CS_HIGHT
+  CS_LOW
+  if(!(SPI2->CR1 & SPI_CR1_DFF)){
+    w25send_byte(PG_PROG);
+    w25send_byte((addr>>16) & 0xFF);
+    w25send_byte((addr>>8) & 0xFF);
+    w25send_byte(addr & 0xFF);
+    w25send_byte(data);
+  }else{
+    memsave = (((PG_PROG<<8) & 0xFF00)|((addr>>16) & 0xFF)) & 0xFFFF;
+    w25send_byte(memsave);
+    w25send_byte(addr & 0xFFFF);
+    w25send_byte(data & 0xFFFF);
+  }
+  CS_HIGHT
+  CS_LOW
+  w25send_byte(RD_SR1);
+  while(w25send_byte(0x0000) & 0x01){}
+  CS_HIGHT
+}
+
+uint8_t w25read(uint32_t addr){
+  CS_LOW
+  w25send_byte(RD_DATA);
+  w25send_byte((addr>>16) & 0xFF);
+  w25send_byte((addr>>8) & 0xFF);
+  w25send_byte(addr & 0xFF);
+  uint8_t ret = w25send_byte(0x00) & 0xFF;
+  CS_HIGHT
+  return ret;
+}
+
+void w25clear_sector(uint32_t addr){
+  CS_LOW
+  w25send_byte(WR_EN);
+  CS_HIGHT
+  CS_LOW
+  w25send_byte(SECT_ER);
+  w25send_byte((addr>>16) & 0xFF);
+  w25send_byte((addr>>8) & 0xFF);
+  w25send_byte(addr & 0xFF);
+  CS_HIGHT
+  CS_LOW
+  w25send_byte(RD_SR1);
+  while((w25send_byte(0x00) & 0x01) == 1){}
+  CS_HIGHT
+}
+
 void key_led_Init(void){
   // Clock BUS Initial
   RCC->AHB1ENR |= RCC_AHB1ENR_GPIOEEN;
   RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
-  SYSCFG->EXTICR[2] |= SYSCFG_EXTICR3_EXTI10_PE;
+  SYSCFG->EXTICR[2] |= SYSCFG_EXTICR3_EXTI10_PE|SYSCFG_EXTICR3_EXTI11_PE;
+  SYSCFG->EXTICR[3] |= SYSCFG_EXTICR4_EXTI12_PE;
   //GPIO 
   GPIOE->MODER |= GPIO_MODER_MODE13_0|GPIO_MODER_MODE14_0|GPIO_MODER_MODE15_0;
   GPIOE->MODER &= ~(GPIO_MODER_MODE10|GPIO_MODER_MODE11|GPIO_MODER_MODE12);
@@ -45,23 +163,36 @@ void key_led_Init(void){
   EXTI->IMR |= EXTI_IMR_IM10|EXTI_IMR_IM11|EXTI_IMR_IM12;
   //Interrupt NVIC Enable
   NVIC_EnableIRQ(EXTI15_10_IRQn);
+  //LED turn off
+  GPIOE->BSRR |= GPIO_BSRR_BS13|GPIO_BSRR_BS14|GPIO_BSRR_BS15;
 }
 
-/***********************interrupts function**************************/
-//keys
-void EXTI15_10_IRQHandler(void){
-  switch(EXTI->PR & (EXTI_PR_PR10|EXTI_PR_PR11|EXTI_PR_PR12)){
-    case EXTI_PR_PR10:
-      GPIOE->BSRR |= GPIO_BSRR_BR13|GPIO_BSRR_BS14|GPIO_BSRR_BS15;
-      break;
-    case EXTI_PR_PR11:
-      GPIOE->BSRR |= GPIO_BSRR_BR14|GPIO_BSRR_BS13|GPIO_BSRR_BS15;
-      break;
-    case EXTI_PR_PR12:
-      GPIOE->BSRR |= GPIO_BSRR_BR15|GPIO_BSRR_BS13|GPIO_BSRR_BS14;
-      break;
-  }
-  EXTI->PR |= EXTI_PR_PR10|EXTI_PR_PR11|EXTI_PR_PR12;
+void SPI2_Init(void){
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN|RCC_AHB1ENR_GPIOCEN|RCC_AHB1ENR_GPIOEEN;
+  //MOSI MISO Pins
+  GPIOC->MODER |= GPIO_MODER_MODER3_1|GPIO_MODER_MODER2_1;
+  GPIOC->AFR[0] |= (5<<GPIO_AFRL_AFSEL3_Pos)|(5<<GPIO_AFRL_AFSEL2_Pos);
+  GPIOC->PUPDR |= GPIO_PUPDR_PUPD3_1|GPIO_PUPDR_PUPD2_1;
+  //SCK Pin
+  GPIOB->MODER |= GPIO_MODER_MODER10_1;
+  GPIOB->AFR[1] |= (5<<GPIO_AFRH_AFSEL10_Pos);
+  GPIOB->PUPDR |= GPIO_PUPDR_PUPD10_1;
+  //CS Pin
+  GPIOE->MODER |= GPIO_MODER_MODER3_0;
+  GPIOE->OTYPER &= ~(GPIO_OTYPER_OT3);
+  GPIOE->PUPDR |= GPIO_PUPDR_PUPD3_1;
+  GPIOE->BSRR |= GPIO_BSRR_BS3;
+  //SPI
+  RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
+  SPI2->CR1 |= (0b100<<SPI_CR1_BR_Pos)|SPI_CR1_MSTR|SPI_CR1_SSM|SPI_CR1_SSI; //42MHz/32 = 1,32MHz Master CS-manual
+  SPI2->CR1 &= ~(SPI_CR1_DFF|SPI_CR1_CPHA|SPI_CR1_CPOL); //8bit mode0
+  SPI2->CR1 |= SPI_CR1_SPE;
+  //W25 memory
+  CS_LOW
+  w25send_byte(EN_RST);
+  CS_HIGHT
+  CS_LOW
+  w25send_byte(RST);
+  CS_HIGHT
 }
-
 /*************************** End of file ****************************/
